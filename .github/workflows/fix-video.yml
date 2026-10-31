@@ -1,0 +1,29 @@
+name: Fix video
+on:
+  workflow_dispatch:
+    inputs:
+      link:
+        description: 'Archive.org video link'
+        required: true
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cut the video into small pieces
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINK: ${{ github.event.inputs.link }}
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          NAME=$(basename "$LINK" | sed 's/%20/_/g; s/\.[^.]*$//; s/[^A-Za-z0-9_-]/_/g')
+          BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/videos/"
+          curl -L --fail --retry 3 -o in.mp4 "$LINK"
+          mkdir out
+          ffmpeg -y -i in.mp4 -map 0:v:0 -map 0:a:0? -c copy -f hls -hls_time 30 -hls_playlist_type vod -hls_base_url "$BASE" -hls_segment_filename "out/${NAME}_%04d.ts" "out/${NAME}.m3u8"
+          gh release view videos -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create videos -R "$GITHUB_REPOSITORY" --prerelease --title "Videos" --notes "Videos for my channels"
+          gh release upload videos out/* -R "$GITHUB_REPOSITORY" --clobber
+          echo "## Your new fast link:" >> "$GITHUB_STEP_SUMMARY"
+          echo "${BASE}${NAME}.m3u8" >> "$GITHUB_STEP_SUMMARY"
